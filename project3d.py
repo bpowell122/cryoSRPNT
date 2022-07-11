@@ -1,15 +1,13 @@
 '''
 |  Generate projections of a 3D volume
 |  02/2021: Written by Ellen Zhong, Emily Navarret, and Joey Davis
-|  07/2022: Updated to include tilt series by Barrett Powell
+|  07/2022: Refactored to include tilt series and run faster with less memory usage by Barrett Powell
 '''
 
 import argparse
 import numpy as np
 import os
 import time
-import pickle
-from scipy.ndimage.fourier import fourier_shift
 
 import torch
 import torch.nn.functional as F
@@ -20,16 +18,19 @@ from cryodrgn import mrc
 from cryodrgn import lie_tools, so3_grid
 
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+matplotlib.use('Agg')
 
-from memory_profiler import profile
+try:
+    from memory_profiler import profile
+except:
+    pass
 
 log = utils.log
 vlog = utils.vlog
 
 def parse_args(parser):
-    parser.add_argument('mrc', help='Input volume')
+    parser.add_argument('mrc', type=os.path.abspath, help='Input volume')
     parser.add_argument('outstack', type=os.path.abspath, help='Output projection stack (.mrcs)')
     parser.add_argument('outpose', type=os.path.abspath, help='Output poses (.pkl)')
 
@@ -39,18 +40,17 @@ def parse_args(parser):
     group.add_argument('--healpy-grid', type=int, help='Resolution level at which to uniformly sample a sphere (equivalent to healpy log_2(NSIDE)')
     group.add_argument('--so3-random', type=int, help='Number of projections to randomly sample from SO3')
 
-    group = parser.add_argument_group('Pose sampling arguments')
-    group.add_argument('--t-extent', type=float, default=0, help='Extent of image translation in pixels')
+    group = parser.add_argument_group('Optional pose sampling arguments')
+    group.add_argument('--t-extent', type=float, default=0, help='Extent of image translation in pixels, defining upper bound for random sampling from uniform distribution')
     group.add_argument('--stage-tilt', type=float, help='Right-handed x-axis stage tilt offset in degrees (simulate stage-tilt SPA collection)')
     group.add_argument('--tilt-series', type=os.path.abspath, help='Path to file (.txt) specifying full tilt series x-axis stage-tilt scheme in degrees')
 
-    group = parser.add_argument_group('Additional arguments')
+    group = parser.add_argument_group('Optional additional arguments')
     group.add_argument('--is-mask', action='store_true', help='Takes max value along z instead of integrating along z, to create mask images from mask volumes')
     group.add_argument('--out-png', type=os.path.abspath, help='Path to save montage of first 9 projections')
     group.add_argument('-b', type=int, default=100, help='Minibatch size (default: %(default)s)')
     group.add_argument('--seed', type=int, help='Random seed')
     group.add_argument('-v','--verbose',action='store_true',help='Increases verbosity')
-    # group.add_argument('--chunk', type=int, default=1e6, help='Chunksize (in # of images) to split particle stack when saving')
     return parser
 
 
@@ -99,16 +99,11 @@ class Projector:
 
     def rotate(self, rot):
         '''
-        rot: B x 3 x 3
+        rot: B x 3 x 3 rotation matrix
         lattice: D^3 x 3
-        tilts_matrices: ntilts x 3 x 3
+        tilts_matrices: ntilts x 3 x 3 rotation matrices
         '''
         B = rot.size(0)
-        if self.tilt is not None:
-            rot = self.tilt @ rot
-        if self.tilts is not None:
-            rot = (self.tilts_matrices @ rot.unsqueeze(1)).view(-1,3,3)
-            B = rot.size(0) # batchsize is now args.b * len(self.tilts)
         grid = self.lattice @ rot # B x D^3 x 3
         grid = grid.view(-1, self.nz, self.ny, self.nx, 3)
         offset = self.center - grid[:,int(self.nz/2),int(self.ny/2),int(self.nx/2)]
@@ -116,58 +111,48 @@ class Projector:
         grid = grid.view(1, -1, self.ny, self.nx, 3)
         vol = F.grid_sample(self.vol, grid, align_corners=False)
         vol = vol.view(B,self.nz,self.ny,self.nx)
-        return vol, rot
+        return vol
 
     def project(self, rot):
-        vols, rots = self.rotate(rot)
         if self.is_mask:
-            return vols.max(dim=1)[0], rots
+            return self.rotate(rot).max(dim=1)[0]
         else:
-            return vols.sum(dim=1), rots
-        # else:
-        #     imgs = torch.empty((rot.shape[0], self.tiltseries_matrices.shape[0], self.ny, self.nx)).to(0)
-        #     for i, tilt in enumerate(self.tiltseries_matrices):
-        #         assert tilt.shape == (3,3), print(tilt.shape)
-        #         imgs[:,i,:,:] = self.rotate(rot @ tilt).sum(dim=1)
-        #     return imgs.view(-1, imgs.shape[-1], imgs.shape[-1])
+            return self.rotate(rot).sum(dim=1)
+
+    def translate(self, image, tran):
+        B, D, D = image.shape
+        ft = torch.fft.fftshift(torch.fft.fft2(torch.fft.ifftshift(image)))  # following standard torch/numpy fft convention
+        mag = torch.abs(ft)
+        phase = torch.angle(ft)
+
+        freqs_x = torch.linspace(-D/2, D/2, D)
+        freqs_x = freqs_x.unsqueeze(0).unsqueeze(0)
+        freqs_x = freqs_x.expand(B, D, D)   # increase frequencies horizontally for phase shifting in x
+        freqs_y = freqs_x.clone().transpose(-1,-2)  # increase frequencies vertically for phase shifting in y
+
+        freqs_x = freqs_x * tran[:, 0].view(B,1,1)  # positive translation shifts images left
+        freqs_y = freqs_y * tran[:, 1].view(B,1,1)  # positive translation shifts images up
+
+        phase_shift = 2 * np.pi * (freqs_x + freqs_y)
+        phase = (phase + phase_shift) % (2 * np.pi)
+
+        out = torch.polar(mag, phase)
+        out = torch.fft.fftshift(torch.fft.ifft2(torch.fft.ifftshift(out))).real   # following standard torch/numpy fft convention
+
+        return out
 
    
 class Poses(data.Dataset):
-    def __init__(self, pose_pkl, device=None):
-        poses = utils.load_pkl(pose_pkl)
-        assert type(poses) == tuple, '--in-pose .pkl file must have both rotations and translations!'
-
-        self.rots = torch.from_numpy(poses[0].astype(np.float32)).to(device)
-        self.trans = poses[1].astype(np.float32)
-        self.N = len(poses[0])
+    def __init__(self, rots, trans):
+        self.rots = rots
+        self.trans = trans
+        self.N = rots.shape[0]
         assert self.rots.shape == (self.N,3,3)
         assert self.trans.shape == (self.N,2)
-        assert self.trans.max() < 1
     def __len__(self):
         return self.N
     def __getitem__(self, index):
-        return self.rots[index]
-
-
-class RandomRot(data.Dataset):
-    def __init__(self, N, device=None):
-        self.N = N
-        self.rots = lie_tools.random_SO3(N).to(device)
-    def __len__(self):
-        return self.N
-    def __getitem__(self, index):
-        return self.rots[index]
-
-
-class GridRot(data.Dataset):
-    def __init__(self, resol, device=None):
-        quats = so3_grid.grid_SO3(resol)
-        self.rots = lie_tools.quaternions_to_SO3(torch.from_numpy(quats)).to(device)
-        self.N = len(self.rots)
-    def __len__(self):
-        return self.N
-    def __getitem__(self, index):
-        return self.rots[index]
+        return self.rots[index], self.trans[index]
 
 
 def plot_projections(out_png, imgs):
@@ -185,21 +170,9 @@ def mkbasedir(out):
 
 def warnexists(out):
     if os.path.exists(out):
-        log('Warning: {} already exists. Overwriting.'.format(out))
+        log(f'Warning: {out} already exists. Will overwrite at the end of this script. [CTRL]+[C] to cancel.')
 
 
-# TODO update to torch.fft (https://github.com/numpy/numpy/issues/13442#issuecomment-489015370)
-def translate_img(img, t):
-    '''
-    img: BxYxX real space image
-    t: Bx2 shift in pixels
-    '''
-    ff = np.fft.fft2(np.fft.fftshift(img))
-    ff = fourier_shift(ff, t)
-    return np.fft.fftshift(np.fft.ifft2(ff)).real
-
-
-# @profile
 def main(args):
     vlog(args)
     for out in (args.outstack, args.out_png, args.outpose):
@@ -237,120 +210,69 @@ def main(args):
 
     # generate rotation matrices
     if args.healpy_grid is not None:
-        rots = GridRot(args.healpy_grid, device=device)
-        log(f'Generating {len(rots)} rotations at resolution level {args.healpy_grid}')
+        quats = so3_grid.grid_SO3(args.healpy_grid)
+        rots = lie_tools.quaternions_to_SO3(torch.from_numpy(quats)).to(device)
+        log(f'Generating {rots.shape[0]} rotations at resolution level {args.healpy_grid}')
+    elif args.so3_random is not None:
+        rots = lie_tools.random_SO3(args.so3_random).to(device)
+        log(f'Generating {rots.shape[0]} random rotations')
     elif args.in_pose is not None:
-        rots = Poses(args.in_pose, device=device)
-        log(f'Generating {len(rots)} rotations from {args.in_pose}')
+        poses = utils.load_pkl(args.in_pose)
+        assert type(poses) == tuple, '--in-pose .pkl file must have both rotations and translations!'
+        rots = torch.from_numpy(poses[0].astype(np.float32)).to(device)
+        log(f'Generating {rots.shape[0]} rotations from {args.in_pose}')
     else:
-        rots = RandomRot(args.so3_random, device=device)
-        log(f'Generating {len(rots)} random rotations')
+        raise RuntimeError
 
-    # apply rotations and project 3D to 2D
-    log('Rotating and projecting...')
-    rot_iterator = data.DataLoader(rots, batch_size=args.b, shuffle=False)
-    ntilts = projector.tilts.size if projector.tilts is not None else 1
-    out_imgs = np.zeros((len(rots) * ntilts, projector.nx, projector.nx), dtype=np.float32)
-    out_rots = np.zeros((len(rots) * ntilts, 3, 3), dtype=np.float32)
-    for i, rot in enumerate(rot_iterator):
-        vlog(f'Projecting {(i+1) * args.b * ntilts}/{len(rots) * ntilts}')
-        projection, rot = projector.project(rot)
-
-        out_imgs[i * args.b * ntilts : (i+1) * args.b * ntilts] = projection.cpu().numpy()
-        out_rots[i * args.b * ntilts : (i+1) * args.b * ntilts] = rot.cpu().numpy()
-
-    # if projector.tilt_series:
-    #     log('Projecting tiltseries...')
-    #     ntilts = projector.tilts.size
-    #     imgs = [] #np.empty((iterator.__len__() * ntilts, vol.shape[0], vol.shape[0]))
-    #     final_rots = np.empty((rot_iterator.__len__() * ntilts, 3, 3))
-    #     for i, rot in enumerate(rot_iterator):
-    #         vlog('Projecting {}/{}'.format((i+1)*len(rot), args.N))
-    #         for j, tilt in enumerate(projector.tiltseries_matrices):
-    #             pose = rot @ tilt.view(1, 3, 3)
-    #             assert pose.shape == (1, 3, 3), print(pose.shape)
-    #             projections = projector.project(pose)
-    #             projections = projections.cpu().numpy()
-    #             imgs.append(projections)
-    #             final_rots[ntilts*i + j] = pose.view(3, 3).cpu().numpy()
-    # else:
-    #     imgs = [] #np.empty((iterator.__len__(), vol.shape[0], vol.shape[0]))
-    #     for i, rot in enumerate(rot_iterator):
-    #         vlog('Projecting {}/{}'.format((i+1)*len(rot), args.N))
-    #         projections = projector.project(rot)
-    #         projections = projections.cpu().numpy()
-    #         imgs.append(projections)
-    #     final_rots = rots
-
-    t2 = time.time()
-    log(f'Rotated and projected {rots.N * ntilts} images in {t2-t1}s ({(t2-t1) / (rots.N * ntilts)}s per image)')
-    # imgs = np.vstack(imgs).astype(np.float32)
+    # expand rotation matrices to account for tilt scheme if specified
+    if projector.tilt is not None:
+        log('Composing rotations with stage tilt')
+        rots = projector.tilt @ rots
+    if projector.tilts is not None:
+        log('Composing rotations with stage tilt series')
+        # expands to `lattice @ tilts_matrices @ rots` rotations
+        # .view ordering keeps sequential tilts of same particle adjacent in out.mrcs and outpose.pkl
+        rots = (projector.tilts_matrices @ rots.unsqueeze(1)).view(-1, 3, 3)
 
     # generate translation matrices
     if args.in_pose is not None:
-        assert args.t_extent == 0, 'Only one of --in-pose and --t-extent can be specified'
         log('Generating translations from input poses')
-        trans = rots.trans * D # convert from fraction of boxsize to pixels
-        trans = -trans[:,::-1] # convention for scipy
+        assert args.t_extent == 0, 'Only one of --in-pose and --t-extent can be specified'
+        poses = utils.load_pkl(args.in_pose).astype(np.float32)
+        assert type(poses) == tuple, '--in-pose .pkl file must have both rotations and translations!'
+        trans = poses[1]
+        assert trans.max() < 1, 'translations from .pkl file must be expressed in boxsize fraction'
     elif args.t_extent != 0:
         assert args.t_extent > 0, '--t-extent must have a non-negative value'
-        assert args.t_extent < out_imgs.shape[-1], '--t-extent cannot be larger than the projection boxsize'
+        assert args.t_extent < projector.nx, '--t-extent cannot be larger than the projection boxsize'
         log(f'Generating translations between +/- {args.t_extent} pixels')
-        trans = np.random.rand(out_imgs.shape[0], 2) * 2 * args.t_extent - args.t_extent
+        trans = (np.random.rand(rots.shape[0], 2,) * 2 * args.t_extent - args.t_extent).astype(np.float32)
+        trans /= D # convert to boxsize fraction
     else:
         log('No translations specified; will not shift images')
-        trans = None
+        trans = np.zeros((rots.shape[0], 2), dtype=np.float32)
 
-    # apply translations
-    if trans is not None:
-        log('Translating...')
-        for img in range(out_imgs.shape[0]):
-            if img % 1000 == 0:
-                vlog(f'Translated {img} / {out_imgs.shape[0]}')
-            out_imgs[img] = translate_img(out_imgs[img], trans[img])
+    # construct poses dataset
+    poses = Poses(rots, trans)
 
-        # chunksize = args.chunk if args.chunk is not None else out_imgs.shape[0]
-        # nchunks = int(np.ceil(out_imgs.shape[0] / chunksize))
-        # if nchunks == 1:
-        #     out_mrcs = args.o
-        # else:
-        #     out_mrcs = [f'.{i}'.join(os.path.splitext(args.o)) for i in range(nchunks)]
-        #
-        # for i in range(nchunks):
-        #     log(f'Translating chunk {i} of {nchunks}')
-        #     slices = np.arange(i * args.chunk, (i + 1) * args.chunk)
-        #     chunk_imgs = out_imgs[i * args.chunk:(i + 1) * args.chunk]
-        #     chunk_trans = trans[i * args.chunk:(i + 1) * args.chunk]
-        #     chunk_translated = np.asarray([translate_img(img, t) for img,t in zip(chunk_imgs, chunk_trans)], dtype=np.float32)
-        #     log(chunk_translated.shape)
-        #     log(f'Saving {out_mrcs[i]}')
-        #     mrc.write(out_mrcs[i], chunk_translated, is_vol=False)
-        #
-        # if nchunks > 1:
-        #     out_mrcs_basenames = [os.path.basename(x) for x in out_mrcs]
-        #     out_txt = f'{os.path.splitext(args.o)[0]}.txt'
-        #     log(f'Saving {out_txt}')
-        #     with open(out_txt, 'w') as f:
-        #         f.write('\n'.join(out_mrcs_basenames))
-        # # imgs = np.asarray([translate_img(img, t) for img,t in zip(imgs,trans)], dtype=np.float32)
-        # # convention: we want the first column to be x shift and second column to be y shift
-        # # reverse columns since current implementation of translate_img uses scipy's
-        # # fourier_shift, which is flipped the other way
-        # # convention: save the translation that centers the image
+    # apply rotations and project 3D to 2D
+    log('Processing...')
+    pose_iterator = data.DataLoader(poses, batch_size=args.b, shuffle=False)
+    out_imgs = np.zeros((len(rots), D, D), dtype=np.float32)
+    for i, (rot, tran) in enumerate(pose_iterator):
+        vlog(f'Projecting {(i+1) * args.b}/{poses.N}')
+        projection = projector.project(rot)
+        projection = projector.translate(projection, tran)
+        out_imgs[i * args.b: (i+1) * args.b] = projection.cpu().numpy()
 
-        trans = -trans[:,::-1]  # undo scipy convention
-        trans /= D  # convert translation from pixel to fraction
-
-        t3 = time.time()
-        log(f'Translated {out_imgs.shape[0]} images in {t3-t2}s ({(t3-t2) / (out_imgs.shape[0])}s per image)')
+    t2 = time.time()
+    log(f'Projected {poses.N} images in {t2-t1}s ({(t2-t1) / (poses.N)}s per image)')
 
     log(f'Saving {args.outstack}')
     mrc.write(args.outstack, out_imgs)
 
-    # log('Saving {}'.format(args.o))
-    # mrc.write(args.o,imgs.astype(np.float32))
     log(f'Saving {args.outpose}')
-    utils.save_pkl((out_rots, trans), args.outpose)
+    utils.save_pkl((poses.rots, poses.trans), args.outpose)
 
     if args.out_png:
         log(f'Saving {args.out_png}')
