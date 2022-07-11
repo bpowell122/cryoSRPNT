@@ -238,9 +238,9 @@ def main(args):
     if args.in_pose is not None:
         log('Generating translations from input poses')
         assert args.t_extent == 0, 'Only one of --in-pose and --t-extent can be specified'
-        poses = utils.load_pkl(args.in_pose).astype(np.float32)
+        poses = utils.load_pkl(args.in_pose)
         assert type(poses) == tuple, '--in-pose .pkl file must have both rotations and translations!'
-        trans = poses[1]
+        trans = poses[1].astype(np.float32)
         assert trans.max() < 1, 'translations from .pkl file must be expressed in boxsize fraction'
     elif args.t_extent != 0:
         assert args.t_extent > 0, '--t-extent must have a non-negative value'
