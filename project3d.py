@@ -32,7 +32,6 @@ vlog = utils.vlog
 def parse_args(parser):
     parser.add_argument('mrc', type=os.path.abspath, help='Input volume')
     parser.add_argument('outstack', type=os.path.abspath, help='Output projection stack (.mrcs)')
-    parser.add_argument('outpose', type=os.path.abspath, help='Output poses (.pkl)')
 
     group = parser.add_argument_group('Required, mutually exclusive, projection schemes')
     group = group.add_mutually_exclusive_group(required=True)
@@ -48,9 +47,10 @@ def parse_args(parser):
     group = parser.add_argument_group('Optional additional arguments')
     group.add_argument('--is-mask', action='store_true', help='Takes max value along z instead of integrating along z, to create mask images from mask volumes')
     group.add_argument('--out-png', type=os.path.abspath, help='Path to save montage of first 9 projections')
-    group.add_argument('-b', type=int, default=100, help='Minibatch size (default: %(default)s)')
+    group.add_argument('-b', type=int, default=100, help='Minibatch size')
     group.add_argument('--seed', type=int, help='Random seed')
     group.add_argument('-v','--verbose',action='store_true',help='Increases verbosity')
+    group.add_argument('outpose', type=os.path.abspath, help='Output poses (.pkl) if sampling healpy grid or generating SO3 random poses')
     return parser
 
 
@@ -121,7 +121,7 @@ class Projector:
 
     def translate(self, image, tran):
         B, D, D = image.shape
-        ft = torch.fft.fftshift(torch.fft.fft2(torch.fft.ifftshift(image)))  # following standard torch/numpy fft convention
+        ft = torch.fft.fftshift(torch.fft.fft2(torch.fft.ifftshift(image)))  # following standard torch/numpy fft convention: https://github.com/numpy/numpy/issues/13442#issuecomment-489015370
         mag = torch.abs(ft)
         phase = torch.angle(ft)
 
@@ -137,7 +137,7 @@ class Projector:
         phase = (phase + phase_shift) % (2 * np.pi)
 
         out = torch.polar(mag, phase)
-        out = torch.fft.fftshift(torch.fft.ifft2(torch.fft.ifftshift(out))).real   # following standard torch/numpy fft convention
+        out = torch.fft.fftshift(torch.fft.ifft2(torch.fft.ifftshift(out))).real   # following standard torch/numpy fft convention: https://github.com/numpy/numpy/issues/13442#issuecomment-489015370
 
         return out
 
@@ -269,7 +269,10 @@ def main(args):
     log(f'Projected {poses.N} images in {t2-t1}s ({(t2-t1) / (poses.N)}s per image)')
 
     log(f'Saving {args.outstack}')
-    mrc.write(args.outstack, out_imgs)
+    header = mrc.MRCHeader.make_default_header(out_imgs, Apix=1., is_vol=False)
+    with open(args.outstack, 'wb') as f:
+        header.write(f)
+        out_imgs.tofile(f)  # this syntax avoids cryodrgn.mrc.write()'s call to .tobytes() which copies the array in memory
 
     log(f'Saving {args.outpose}')
     utils.save_pkl((poses.rots, poses.trans), args.outpose)
