@@ -1,6 +1,7 @@
 '''
 Corrupt particle images with structural noise --> CTF --> digital/shot noise
-Written by Ellen Zhong, Emily Navarrete, and Joey Davis
+| 02/2021:Written by Ellen Zhong, Emily Navarrete, and Joey Davis
+|  07/2022: Refactored to include tilt series and run faster with less memory usage by Barrett Powell
 '''
 
 import argparse
