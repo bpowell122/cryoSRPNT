@@ -50,7 +50,7 @@ def parse_args(parser):
     group.add_argument('-b', type=int, default=100, help='Minibatch size')
     group.add_argument('--seed', type=int, help='Random seed')
     group.add_argument('-v','--verbose',action='store_true',help='Increases verbosity')
-    group.add_argument('outpose', type=os.path.abspath, help='Output poses (.pkl) if sampling healpy grid or generating SO3 random poses')
+    group.add_argument('--outpose', type=os.path.abspath, help='Output poses (.pkl) if sampling healpy grid or generating SO3 random poses')
     return parser
 
 
