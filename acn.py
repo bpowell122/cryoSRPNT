@@ -145,7 +145,7 @@ def main(args):
 
     # load particles
     log(f'Loading particles from {args.particles} ...')
-    particles = mrc.parse_mrc(args.particles)[0].astype(np.float32)
+    particles = mrc.parse_mrc(args.particles)[0].astype(np.float32, copy=False)
     assert particles.shape[-1] == particles.shape[-2], 'Images must be square'
     Nimg, D, D = particles.shape
     log(f'Loaded {Nimg} {D}x{D} particles')
