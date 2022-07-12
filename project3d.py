@@ -17,14 +17,7 @@ from cryodrgn import utils
 from cryodrgn import mrc
 from cryodrgn import lie_tools, so3_grid
 
-import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use('Agg')
-
-try:
-    from memory_profiler import profile
-except:
-    pass
 
 log = utils.log
 vlog = utils.vlog

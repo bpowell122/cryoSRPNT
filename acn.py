@@ -18,11 +18,6 @@ from cryodrgn.ctf import compute_ctf
 from cryodrgn import mrc
 from cryodrgn import utils
 
-try:
-    from memory_profiler import profile
-except:
-    pass
-
 log = utils.log
 vlog = utils.vlog
 
@@ -132,7 +127,6 @@ def plot_projections(out_png, imgs):
     plt.savefig(out_png)
 
 
-# @profile
 def main(args):
     vlog(args)
 
