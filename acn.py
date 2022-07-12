@@ -323,7 +323,10 @@ def main(args):
 
     # save particles.mrcs
     log(f'Writing image stack to {args.o}')
-    mrc.write(args.o, particles) # TODO this uses 2x ptcl_stack bytes of memory (np.float32), presumably due to underlying array.tobytes() call
+    header = mrc.MRCHeader.make_default_header(particles, Apix=ctf_params[0,1], is_vol=False)
+    with open(args.o, 'wb') as f:
+        header.write(f)
+        particles.tofile(f)  # this syntax avoids cryodrgn.mrc.write()'s call to .tobytes() which copies the array in memory
 
     # save ctf.pkl
     if args.out_pkl:
