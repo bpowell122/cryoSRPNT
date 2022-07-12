@@ -18,7 +18,10 @@ from cryodrgn.ctf import compute_ctf
 from cryodrgn import mrc
 from cryodrgn import utils
 
-from memory_profiler import profile
+try:
+    from memory_profiler import profile
+except:
+    pass
 
 log = utils.log
 vlog = utils.vlog
@@ -27,12 +30,12 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', type=os.path.abspath, help='Input MRC stack (.mrcs)')
+    parser.add_argument('outstack', type=os.path.abspath, help='Output .mrcs particle stack')
     parser.add_argument('--ctf', type=os.path.abspath, help='Get all ctf parameters from a cryodrgn-format ctf pkl')
     parser.add_argument('--snr1', default=1.4, type=float, help='Intermediate SNR for pre-CTF application of structural noise')
     parser.add_argument('--std1', type=float, help='Override --snr1 with gaussian noise stdev. Set to 0 for no structural noise')
     parser.add_argument('--snr2', default=0.05, type=float, help='Final SNR after post-CTF application of shot noise')
     parser.add_argument('--std2', type=float, help='Override --snr2 with gaussian noise stdev. Set to 0 for no shot noise')
-    parser.add_argument('-o', required=True, type=os.path.abspath, help='Output .mrcs particle stack')
     parser.add_argument('--out-pkl', type=os.path.abspath, help='Optional output pkl for ctf params')
     parser.add_argument('--invert', default=True, help='Invert the image data sign. Default is to invert, which is common/correct for most EM processing')
     parser.add_argument('--normalize', action='store_true', help='Normalize output particle stack to have a mean 0 and std 1')
@@ -323,9 +326,9 @@ def main(args):
     particles = particles.reshape(-1, D, D)
 
     # save particles.mrcs
-    log(f'Writing image stack to {args.o}')
+    log(f'Writing image stack to {args.outstack}')
     header = mrc.MRCHeader.make_default_header(particles, Apix=ctf_params[0,1], is_vol=False)
-    with open(args.o, 'wb') as f:
+    with open(args.outstack, 'wb') as f:
         header.write(f)
         particles.tofile(f)  # this syntax avoids cryodrgn.mrc.write()'s call to .tobytes() which copies the array in memory
 
