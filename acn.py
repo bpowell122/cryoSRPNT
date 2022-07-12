@@ -16,7 +16,6 @@ from torch.utils.data import DataLoader
 from cryodrgn.ctf import compute_ctf
 from cryodrgn import mrc
 from cryodrgn import utils
-from cryodrgn import fft
 
 from memory_profiler import profile
 
@@ -27,17 +26,17 @@ vlog = utils.vlog
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('particles', type=os.path.abspath, help='Input MRC stack (.mrcs)')
+    parser.add_argument('--ctf', type=os.path.abspath, help='Get all ctf parameters from a cryodrgn-format ctf pkl')
     parser.add_argument('--snr1', default=1.4, type=float, help='Intermediate SNR for pre-CTF application of structural noise')
-    parser.add_argument('--snr2', default=0.05, type=float, help='Final SNR after post-CTF application of shot noise')
     parser.add_argument('--std1', type=float, help='Override --snr1 with gaussian noise stdev. Set to 0 for no structural noise')
+    parser.add_argument('--snr2', default=0.05, type=float, help='Final SNR after post-CTF application of shot noise')
     parser.add_argument('--std2', type=float, help='Override --snr2 with gaussian noise stdev. Set to 0 for no shot noise')
     parser.add_argument('-o', required=True, type=os.path.abspath, help='Output .mrcs particle stack')
     parser.add_argument('--out-pkl', type=os.path.abspath, help='Optional output pkl for ctf params')
     parser.add_argument('--invert', default=True, help='Invert the image data sign. Default is to invert, which is common/correct for most EM processing')
     parser.add_argument('--normalize', action='store_true', help='Normalize output particle stack to have a mean 0 and std 1')
 
-    group = parser.add_argument_group('CTF parameters')
-    group.add_argument('--ctf', type=os.path.abspath, help='Get all ctf parameters from a cryodrgn-format ctf pkl')
+    group = parser.add_argument_group('Define CTF parameters at command line')
     group.add_argument('--Apix', type=float, help='Pixel size (A/pix)')
     group.add_argument('--dfu', default=15000, type=float, help='Defocus U (Å)')
     group.add_argument('--dfv', default=15000, type=float, help='Defocus V (Å)')
@@ -47,18 +46,13 @@ def parse_args():
     group.add_argument('--wgh', default=0.1, type=float, help='Amplitude constrast ratio')
     group.add_argument('--ps', default=0, type=float, help='Phase shift (deg)')
     group.add_argument('--b-factor', default=None, type=float, help='B factor for Gaussian envelope (Å^2)')
-
-    # TODO figure out what to do with these params
-    # group.add_argument('--df-file', metavar='pkl', help='Use defocus parameters from a pkl file of a Nx2 np.array of values')
-    # group.add_argument('--sample-df', type=float, help='Jiggle defocus per image with this stdev')
-    # group.add_argument('--no-astigmatism', action='store_true', help='Keep dfu and dfv the same per particle')
-
-
+    group.add_argument('--df-std', default=None, type=float, help='Jiggle defocus per image with this stdev')
+    group.add_argument('--no-astigmatism', action='store_true', help='Keep dfu and dfv the same per particle if sampling with --df-std')
 
     group = parser.add_argument_group('Tilt series exclusive parameters')
     group.add_argument('--tilt-series', type=os.path.abspath, help='Path to file (.txt) specifying full tilt series x-axis stage-tilt scheme in degrees. '
                                                                    'Real-space particles will be weighted by cos(tilt) between structural noise and CTF')
-    group.add_argument('--dose', default=3.0, type=float, help='Dose in e- / A2 / tilt. '
+    group.add_argument('--dose', default=None, type=float, help='Dose in e- / A2 / tilt. '
                                                                'Fourier-space particles will be weighted by exposure-dependent amplitude attenuation before structural noise')
 
     group = parser.add_argument_group('Optional additional arguments')
@@ -80,14 +74,10 @@ def calculate_dose_weights(ntilts, D, pixel_size, dose_per_A2_per_tilt, voltage)
     dose_weights = np.zeros((ntilts, D, D))
     fourier_pixel_sizes = 1.0 / (np.array([D, D]))  # in units of 1/px
     box_center_indices = np.array([D, D]) // 2
-    critical_dose_at_dc = 2 ** 31  # shorthand way to ensure dc component is always weighted ~1
+    critical_dose_at_dc = 0.001 * (2 ** 31) # shorthand way to ensure dc component is always weighted ~1
     voltage_scaling_factor = 1.0 if voltage == 300 else 0.8  # 1.0 for 300kV, 0.8 for 200kV microscopes
 
     for k, dose_at_end_of_tilt in enumerate(cumulative_doses):
-        if k == 0:
-            dose_at_start_of_tilt = 0
-        else:
-            dose_at_start_of_tilt = dose_per_A2_per_tilt[k-1]
 
         for j in range(D):
             y = ((j - box_center_indices[1]) * fourier_pixel_sizes[1])
@@ -102,27 +92,11 @@ def calculate_dose_weights(ntilts, D, pixel_size, dose_per_A2_per_tilt, voltage)
                     spatial_frequency_critical_dose = (0.24499 * spatial_frequency ** (
                         -1.6649) + 2.8141) * voltage_scaling_factor  # eq 3 from DOI: 10.7554/eLife.06980
 
-                    # from electron_dose.f90:
-                    # There is actually an analytical solution, found by Wolfram Alpha:
-                    # optimal_dose = -critical_dose - 2*critical_dose*W(-1)(-1/(2*sqrt(e)))
-                    # where W(k) is the analytic continuation of the product log function
-                    # http://mathworld.wolfram.com/LambertW-Function.html
-                    # However, there is an acceptable numerical approximation, which I
-                    # checked using a spreadsheet and the above formula.
-                    # Here, we use the numerical approximation:
-                    spatial_frequency_optimal_dose = 2.51284 * spatial_frequency_critical_dose
+                dose_weights[k, j, i] = np.exp((-0.5 * dose_at_end_of_tilt) / spatial_frequency_critical_dose)  # eq 5 from DOI: 10.7554/eLife.06980
 
-                    if (abs(dose_at_end_of_tilt - spatial_frequency_optimal_dose) < abs(
-                            dose_at_start_of_tilt - spatial_frequency_optimal_dose)):
-                        dose_weights[k, j, i] = np.exp(
-                            (
-                                        -0.5 * dose_at_end_of_tilt) / spatial_frequency_critical_dose)  # eq 5 from DOI: 10.7554/eLife.06980
-                    else:
-                        dose_weights[k, j, i] = 0.0
-
-                assert dose_weights.min() >= 0.0
-                assert dose_weights.max() <= 1.0
-                return dose_weights
+    assert dose_weights.min() >= 0.0
+    assert dose_weights.max() <= 1.0
+    return dose_weights
 
 
 class ImageDataset(data.Dataset):
@@ -170,7 +144,7 @@ def main(args):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
     # load particles
-    log(f'Loading particles from {args.particles}...')
+    log(f'Loading particles from {args.particles} ...')
     particles = mrc.parse_mrc(args.particles)[0].astype(np.float32)
     assert particles.shape[-1] == particles.shape[-2], 'Images must be square'
     Nimg, D, D = particles.shape
@@ -188,9 +162,14 @@ def main(args):
 
     # calculate std1
     assert args.snr1 > 0, '--snr1 must be positive'
-    std1 = std/np.sqrt(args.snr1) if args.std1 is None else args.std1
+    if args.std1 is None:
+        snr1 = args.snr1
+        std1 = std/np.sqrt(snr1)
+    else:
+        std1 = args.std1
+        snr1 = (std / std1) ** 2
     if std1 > 0:
-        log(f'Will add s1 (structural noise) with stdev {std1}')
+        log(f'Will add s1 (structural noise) with stdev {std1} targeting SNR {snr1}')
     else:
         log(f'Will not add s1 (structural noise); std1 <= 0')
 
@@ -205,10 +184,19 @@ def main(args):
         std2 = args.std2
         snr2 = (std / std2) ** 2
     if std2 > 0:
-        log(f'Will add s2 (shot noise) with stdev {std2}')
+        log(f'Will add s2 (shot noise) with stdev {std2} targeting SNR {snr2}')
     else:
         log(f'Will not add s2 (shot noise); std2 <= 0')
-    log(f'SNR targets: structural noise {args.snr1}; shot noise {snr2}; final SNR {args.snr2}')
+
+    # calculate overall final snr
+    if (std1 <= 0) and (std2 <= 0):
+        pass
+    elif (std1 <= 0) and (std2 > 0):
+        log(f'Final SNR: {snr2}')
+    elif (std1 > 0) and (std2 <= 0):
+        log(f'Final SNR: {snr1}')
+    else:
+        log(f'Final SNR: {(snr1 * snr2 / (1 + snr1 + snr2))}')  # rearranged cascading noise processes from above
 
     # load CTF from pkl or prepare ctf_params array from args
     if args.ctf is not None:
@@ -229,6 +217,19 @@ def main(args):
         ctf_params[0,7] = args.wgh
         ctf_params[0,8] = args.ps
         ctf_params = np.tile(ctf_params, (Nimg, 1))
+    if args.df_std is not None:
+        log(f'Jiggling defocus values by stdev {args.df_std}')
+        df_mean = np.mean(ctf_params[0,2:4])
+        df_std = np.random.normal(df_mean, args.df_std, Nimg)
+        if args.no_astigmatism:
+            assert args.dfv == args.dfu, "--dfu and --dfv must be the same"
+            ctf_params[:,2] += df_std
+            ctf_params[:,3] += df_std
+        else:
+            ctf_params[:,2] += df_std
+            ctf_params[:,3] += np.random.normal(df_mean, args.df_std, Nimg)
+
+
 
     # prepare frequency lattice
     freqs = np.arange(-D/2, D/2) / (ctf_params[0,1] * D)
@@ -249,6 +250,7 @@ def main(args):
             assert len(set(ctf_params[:,1])) == 1, 'Found multiple pixel sizes in ctf_params; this is not currently supported for dose weighting'
             assert len(set(ctf_params[:,5])) == 1, 'Found multiple voltages in ctf_params; this is not currently supported for dose weighting'
             dose_weights = calculate_dose_weights(ntilts, D, ctf_params[0,1], args.dose, ctf_params[0,5])
+            plot_projections('dose_weights.png', dose_weights[:9])
         else:
             dose_weights = np.ones((ntilts, D, D))
     else:
@@ -319,12 +321,9 @@ def main(args):
     # undo any remaining tilt_series particle reshaping
     particles = particles.reshape(-1, D, D)
 
-    print(particles.dtype)
-    print(type(particles))
-
     # save particles.mrcs
     log(f'Writing image stack to {args.o}')
-    mrc.write(args.o, particles)#.astype(np.float32))
+    mrc.write(args.o, particles) # TODO this uses 2x ptcl_stack bytes of memory (np.float32), presumably due to underlying array.tobytes() call
 
     # save ctf.pkl
     if args.out_pkl:
