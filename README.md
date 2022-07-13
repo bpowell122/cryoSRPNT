@@ -1,10 +1,10 @@
 # Simptcl: a tool for rapidly simulating realistic cryo-EM particles
 
-<img src="https://github.mit.edu/bmp/simptcl/assets/out_noiseless.png" alt="Noiseless projections" width="100"/>
-<img src="https://github.mit.edu/bmp/simptcl/assets/out_noisy.png" alt="Noisy + CTF-corrupted projections" width="100"/>
+<img src="assets/out_noiseless.png" alt="Noiseless projections" width="300"/>
+<img src="assets/out_noisy.png" alt="Noisy + CTF-corrupted projections" width="300"/>
 
 
-Simptcl allows for generation of arbitrary, realistic cryo-EM datasets with known ground truth. Such datasets are useful for developing and benchmarking heterogeneity analysis tools, among other purposes. Simptcl has two scripts designed to be used sequentially: 
+Simptcl allows for generation of arbitrary, realistic cryo-EM datasets with known ground truth. Such datasets are useful for developing and benchmarking cryo-EM reconstruction and analysis tools. Simptcl has two scripts designed to be used sequentially: 
 1. `project3d.py` : takes as input a 3D volume and a pose sampling scheme, and produces corresponding noiseless 2D projections of the volume. 
 2. `acn.py` : takes as input the  2D projections, global SNR, and CTF parameters per-particle, and produces corresponding noisy + CTF-corrupted particles. 
 
