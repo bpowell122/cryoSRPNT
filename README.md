@@ -1,7 +1,7 @@
 # Simptcl: a tool for rapidly simulating realistic cryo-EM particles
 
-![](assets/out_noiseless.png)
-![](assets/out_noisy.png)
+<img src="https://github.mit.edu/bmp/simptcl/assets/out_noiseless.png" alt="Noiseless projections" width="100"/>
+<img src="https://github.mit.edu/bmp/simptcl/assets/out_noisy.png" alt="Noisy + CTF-corrupted projections" width="100"/>
 
 
 Simptcl allows for generation of arbitrary, realistic cryo-EM datasets with known ground truth. Such datasets are useful for developing and benchmarking heterogeneity analysis tools, among other purposes. Simptcl has two scripts designed to be used sequentially: 
