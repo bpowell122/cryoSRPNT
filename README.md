@@ -28,9 +28,9 @@ Additional options are visible via `python project3d.py --help` or `python acn.p
 ### Background
 `project3d.py` offers three possible pose determination schemes: (1) user-provided poses, (2) uniform spherical projection sampling at specified resolutions using `healpy`, or (3) poses sampled from SO3 (therefore randomly sampled from a uniform distribution of spherical projections). 
 
-`acn.py` follows the sequential (1) structural noise --> (2) CTF --> (3) shot noise processes described in [Baxter et al, 2009](https://doi.org/10.1016%2Fj.jsb.2009.02.012). Both noise  processes are modeled as the real-space addition of gaussian noise with independent standard deviations. CTF is modeled following standard cryo-EM procedures. 
+`acn.py` follows the sequential (1) structural noise --> (2) CTF --> (3) shot noise cryo-EM image formation model described in [Baxter et al, 2009](https://doi.org/10.1016%2Fj.jsb.2009.02.012). Both noise  processes are modeled as the real-space addition of gaussian noise with independent standard deviations. CTF is modeled following standard cryo-EM procedures. 
 
 ### Implementation and system requirements
 Both scripts are built using a pytorch/cuda framework to leverage GPU acceleration. Simptcl can simulate 1M particles at 100 x 100 px in ~ 5 minutes on a system equipped as follows: CPU: Intel Xeon Gold 6242R; GPU: Nvidia RTX 3090; RAM: 512 GB.
 
-However, the (Nvidia) GPU is not required, and RAM is mostly required to hold a single copy of the particle stack in memory with np.float32 precision (4 bytes per pixel). Therefore the particle stack described above could be simulated on a system with ~48 GB RAM and an old / no GPU.
+However, the (Nvidia) GPU is not required, and RAM is predominantly used to hold a single copy of the particle stack in memory with np.float32 precision (4 bytes per pixel). Therefore, the particle stack described above could be simulated on a system with ~48 GB RAM and an older / no GPU.
