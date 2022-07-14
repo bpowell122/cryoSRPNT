@@ -22,14 +22,13 @@ log = utils.log
 vlog = utils.vlog
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def parse_args(parser):
     parser.add_argument('particles', type=os.path.abspath, help='Input MRC stack (.mrcs)')
     parser.add_argument('outstack', type=os.path.abspath, help='Output .mrcs particle stack')
     parser.add_argument('--ctf', type=os.path.abspath, help='Get all ctf parameters from a cryodrgn-format ctf pkl')
-    parser.add_argument('--snr1', default=1.4, type=float, help='Intermediate SNR for pre-CTF application of structural noise')
+    parser.add_argument('--snr1', default=1.4, type=float, help='SNR due solely to structural noise (pre-CTF)')
     parser.add_argument('--std1', type=float, help='Override --snr1 with gaussian noise stdev. Set to 0 for no structural noise')
-    parser.add_argument('--snr2', default=0.05, type=float, help='Final SNR after post-CTF application of shot noise')
+    parser.add_argument('--snr2', default=0.1, type=float, help='SNR due solely to shot noise (post-CTF)')
     parser.add_argument('--std2', type=float, help='Override --snr2 with gaussian noise stdev. Set to 0 for no shot noise')
     parser.add_argument('--out-pkl', type=os.path.abspath, help='Optional output pkl for ctf params')
     parser.add_argument('--invert', default=True, help='Invert the image data sign. Default is to invert, which is common/correct for most EM processing')
@@ -165,26 +164,24 @@ def main(args):
         std1 = std/np.sqrt(snr1)
     else:
         std1 = args.std1
-        snr1 = (std / std1) ** 2
+        snr1 = (std / std1) ** 2 if std1 > 0 else None
     if std1 > 0:
         log(f'Will add s1 (structural noise) with stdev {std1} targeting SNR {snr1}')
     else:
-        log(f'Will not add s1 (structural noise); std1 <= 0')
+        log(f'Will not add s1 (structural noise); --std1 set to 0')
 
     # calculate std2
     assert args.snr2 > 0, '--snr2 must be positive'
     if args.std2 is None:
-        # cascading of noise processes according to Frank and Al-Ali (1975) & Baxter (2009)
-        # args.std2 is overall SNR; here we need SNR for shot noise alone
-        snr2 = (1 + 1/args.snr1) / (1/args.snr2 - 1/args.snr1)
+        snr2 = args.snr2
         std2 = std/np.sqrt(snr2)
     else:
         std2 = args.std2
-        snr2 = (std / std2) ** 2
+        snr2 = (std / std2) ** 2 if std2 > 0 else None
     if std2 > 0:
         log(f'Will add s2 (shot noise) with stdev {std2} targeting SNR {snr2}')
     else:
-        log(f'Will not add s2 (shot noise); std2 <= 0')
+        log(f'Will not add s2 (shot noise); --std2 set to 0')
 
     # calculate overall final snr
     if (std1 <= 0) and (std2 <= 0):
@@ -194,7 +191,8 @@ def main(args):
     elif (std1 > 0) and (std2 <= 0):
         log(f'Final SNR: {snr1}')
     else:
-        log(f'Final SNR: {(snr1 * snr2 / (1 + snr1 + snr2))}')  # rearranged cascading noise processes from above
+        # cascading of noise processes according to Frank and Al-Ali (1975) & Baxter (2009) eq 2
+        log(f'Final SNR: {(snr1 * snr2 / (1 + snr1 + snr2))}')
 
     # load CTF from pkl or prepare ctf_params array from args
     if args.ctf is not None:
@@ -277,7 +275,8 @@ def main(args):
             batch_ptcls = torch.fft.fftshift(torch.fft.ifft2(torch.fft.ifftshift(batch_ptcls, dim=(-1, -2))),dim=(-1, -2))
 
         # apply structural noise std1
-        batch_ptcls += torch.normal(mean=0, std=std1, size=batch_ptcls.shape)
+        if std1 > 0:
+            batch_ptcls += torch.normal(mean=0, std=std1, size=batch_ptcls.shape)
 
         # apply tilt weighting
         if args.tilt_series:
@@ -291,8 +290,9 @@ def main(args):
         batch_ptcls *= ctf_weights
         batch_ptcls = torch.fft.fftshift(torch.fft.ifft2(torch.fft.ifftshift(batch_ptcls, dim=(-1, -2))), dim=(-1, -2))
 
-        # IFFT stack and apply shot noise std2
-        batch_ptcls += torch.normal(mean=0, std=std2, size=batch_ptcls.shape)
+        # apply shot noise std2
+        if std2 > 0:
+            batch_ptcls += torch.normal(mean=0, std=std2, size=batch_ptcls.shape)
 
         # invert if requested
         if args.invert:
@@ -339,4 +339,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    main(parse_args().parse_args())
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    args = parse_args(parser).parse_args()
+    utils._verbose = args.verbose
+    main(args)
