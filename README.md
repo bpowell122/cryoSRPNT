@@ -1,8 +1,8 @@
 # Simptcl: a tool for rapidly simulating realistic cryo-EM particles
 
 <p align="middle">
-    <img src="assets/out_noiseless.png" alt="Noiseless projections" width="40%"/> 
-    <img src="assets/out_noisy.png" alt="Noisy + CTF-corrupted projections" width="40%"/>
+    <img src="assets/out_noiseless.png" title="Randomly sampled noiseless projections" width="40%"/> 
+    <img src="assets/out_noisy.png" title="Corresponding realistic projections with SNR1=1.4, SNR2=0.2, defocus=2um" width="40%"/>
 </p>
 
 

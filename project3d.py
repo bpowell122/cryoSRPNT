@@ -149,10 +149,12 @@ class Poses(data.Dataset):
 
 
 def plot_projections(out_png, imgs):
-    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(10,10))
+    fig, axes = plt.subplots(nrows=3, ncols=3)
     axes = axes.ravel()
     for i in range(min(len(imgs),9)):
-        axes[i].imshow(imgs[i], cmap='gray')
+        axes[i].imshow(imgs[i], cmap='gray', interpolation='none', resample=False)
+        axes[i].axis('off')
+    plt.tight_layout()
     plt.savefig(out_png)
 
 
