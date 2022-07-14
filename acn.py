@@ -30,7 +30,7 @@ def parse_args(parser):
     parser.add_argument('--std1', type=float, help='Override --snr1 with gaussian noise stdev. Set to 0 for no structural noise')
     parser.add_argument('--snr2', default=0.1, type=float, help='SNR due solely to shot noise (post-CTF)')
     parser.add_argument('--std2', type=float, help='Override --snr2 with gaussian noise stdev. Set to 0 for no shot noise')
-    parser.add_argument('--out-pkl', type=os.path.abspath, help='Optional output pkl for ctf params')
+    parser.add_argument('--out-ctf', type=os.path.abspath, help='Optional output pkl for ctf params')
     parser.add_argument('--invert', default=True, help='Invert the image data sign. Default is to invert, which is common/correct for most EM processing')
     parser.add_argument('--normalize', action='store_true', help='Normalize output particle stack to have a mean 0 and std 1')
 
@@ -329,9 +329,9 @@ def main(args):
         particles.tofile(f)  # this syntax avoids cryodrgn.mrc.write()'s call to .tobytes() which copies the array in memory
 
     # save ctf.pkl
-    if args.out_pkl:
-        log(f'Writing ctf parameters to {args.out_pkl}')
-        utils.save_pkl(ctf_params, args.out_pkl)
+    if args.out_ctf:
+        log(f'Writing ctf parameters to {args.out_ctf}')
+        utils.save_pkl(ctf_params, args.out_ctf)
 
     if args.out_png:
         log(f'Saving {args.out_png}')

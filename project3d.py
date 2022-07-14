@@ -43,7 +43,7 @@ def parse_args(parser):
     group.add_argument('-b', type=int, default=100, help='Minibatch size')
     group.add_argument('--seed', type=int, help='Random seed')
     group.add_argument('-v','--verbose',action='store_true',help='Increases verbosity')
-    group.add_argument('--outpose', type=os.path.abspath, help='Output poses (.pkl) if sampling healpy grid or generating SO3 random poses')
+    group.add_argument('--out-pose', type=os.path.abspath, help='Output poses (.pkl) if sampling healpy grid or generating SO3 random poses')
     return parser
 
 
@@ -170,7 +170,7 @@ def warnexists(out):
 
 def main(args):
     vlog(args)
-    for out in (args.outstack, args.out_png, args.outpose):
+    for out in (args.outstack, args.out_png, args.out_pose):
         if not out: continue
         mkbasedir(out)
         warnexists(out)
@@ -226,7 +226,7 @@ def main(args):
     if projector.tilts is not None:
         log('Composing rotations with stage tilt series')
         # expands to `lattice @ tilts_matrices @ rots` rotations
-        # .view ordering keeps sequential tilts of same particle adjacent in out.mrcs and outpose.pkl
+        # .view ordering keeps sequential tilts of same particle adjacent in out.mrcs and out_pose.pkl
         rots = (projector.tilts_matrices @ rots.unsqueeze(1)).view(-1, 3, 3)
 
     # generate translation matrices
@@ -269,8 +269,8 @@ def main(args):
         header.write(f)
         out_imgs.tofile(f)  # this syntax avoids cryodrgn.mrc.write()'s call to .tobytes() which copies the array in memory
 
-    log(f'Saving {args.outpose}')
-    utils.save_pkl((poses.rots, poses.trans), args.outpose)
+    log(f'Saving {args.out_pose}')
+    utils.save_pkl((poses.rots, poses.trans), args.out_pose)
 
     if args.out_png:
         log(f'Saving {args.out_png}')
