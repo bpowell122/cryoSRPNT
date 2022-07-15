@@ -40,7 +40,7 @@ def parse_args(parser):
     group.add_argument('--dfv', default=15000, type=float, help='Defocus V (Å)')
     group.add_argument('--ang', default=0, type=float, help='Astigmatism angle (deg)')
     group.add_argument('--kv', default=300, type=float, help='Microscope voltage (kV)')
-    group.add_argument('--cs', default=2, type=float, help='Spherical aberration (mm)')
+    group.add_argument('--cs', default=2.7, type=float, help='Spherical aberration (mm)')
     group.add_argument('--wgh', default=0.1, type=float, help='Amplitude constrast ratio')
     group.add_argument('--ps', default=0, type=float, help='Phase shift (deg)')
     group.add_argument('--b-factor', default=None, type=float, help='B factor for Gaussian envelope (Å^2)')
