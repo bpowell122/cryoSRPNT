@@ -6,7 +6,7 @@
 </p>
 
 
-cryoSRPNT allows for generation of arbitrary, realistic cryo-EM datasets derived from known ground truth volumes. Such datasets are useful for developing and benchmarking cryo-EM reconstruction and analysis tools. cryoSRPNT has two scripts designed to be used sequentially: 
+cryoSRPNT, a Simulator of Realistic Particles using Noise Terms, allows for generation of arbitrary, realistic cryo-EM datasets derived from known ground truth volumes. Such datasets are useful for developing and benchmarking cryo-EM reconstruction and analysis tools. cryoSRPNT has two scripts designed to be used sequentially: 
 1. `project3d.py` : takes as input a 3D volume and a pose sampling scheme, and produces corresponding noiseless 2D projections of the volume. 
 2. `acn.py` : takes as input the  2D projections, global SNR, and CTF parameters per-particle, and produces corresponding noisy + CTF-corrupted particles. 
 
