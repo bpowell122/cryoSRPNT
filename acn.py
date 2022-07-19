@@ -36,8 +36,8 @@ def parse_args(parser):
 
     group = parser.add_argument_group('Define CTF parameters at command line')
     group.add_argument('--Apix', type=float, help='Pixel size (A/pix)')
-    group.add_argument('--dfu', default=15000, type=float, help='Defocus U (Å)')
-    group.add_argument('--dfv', default=15000, type=float, help='Defocus V (Å)')
+    group.add_argument('--dfu', default=15000, nargs="+", type=float, help='Defocus U (Å) (single or multiple space-separated values)')
+    group.add_argument('--dfv', default=15000, nargs="+", type=float, help='Defocus V (Å) (single or multiple space-separated values)')
     group.add_argument('--ang', default=0, type=float, help='Astigmatism angle (deg)')
     group.add_argument('--kv', default=300, type=float, help='Microscope voltage (kV)')
     group.add_argument('--cs', default=2.7, type=float, help='Spherical aberration (mm)')
@@ -207,14 +207,25 @@ def main(args):
         ctf_params = np.zeros((1, 9))
         ctf_params[0,0] = D
         ctf_params[0,1] = args.Apix
-        ctf_params[0,2] = args.dfu
-        ctf_params[0,3] = args.dfv
         ctf_params[0,4] = args.ang
         ctf_params[0,5] = args.kv
         ctf_params[0,6] = args.cs
         ctf_params[0,7] = args.wgh
         ctf_params[0,8] = args.ps
         ctf_params = np.tile(ctf_params, (Nimg, 1))
+
+        assert len(args.dfv) == len(args.dfv), 'dfu and dfv must have the same number of values'
+        # pre-load realistic (non-zero) defocus values
+        ctf_params[:, 2] = args.dfu[0]
+        ctf_params[:, 3] = args.dfv[0]
+
+        # apply defocus values from supplied list
+        n_dfoci = len(args.dfu)
+        defocus_subset = Nimg // n_dfoci
+        for i, (dfu, dfv) in enumerate(zip(args.dfu, args.dfv)):
+            ctf_params[i * defocus_subset: (i + 1) * defocus_subset, 2] = dfu
+            ctf_params[i * defocus_subset: (i + 1) * defocus_subset, 3] = dfv
+
     if args.df_std is not None:
         log(f'Jiggling defocus values by stdev {args.df_std}')
         df_mean = np.mean(ctf_params[0,2:4])
