@@ -270,6 +270,10 @@ def main(args):
         out_imgs.tofile(f)  # this syntax avoids cryodrgn.mrc.write()'s call to .tobytes() which copies the array in memory
 
     log(f'Saving {args.out_pose}')
+    if type(poses.rots) == torch.Tensor:
+        poses.rots = poses.rots.cpu().numpy()
+    if type(poses.trans) == torch.Tensor:
+        poses.trans = poses.trans.cpu().numpy()
     utils.save_pkl((poses.rots, poses.trans), args.out_pose)
 
     if args.out_png:
