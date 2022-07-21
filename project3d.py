@@ -40,7 +40,7 @@ def parse_args(parser):
     group = parser.add_argument_group('Optional additional arguments')
     group.add_argument('--is-mask', action='store_true', help='Takes max value along z instead of integrating along z, to create mask images from mask volumes')
     group.add_argument('--out-png', type=os.path.abspath, help='Path to save montage of first 9 projections')
-    group.add_argument('-b', type=int, default=100, help='Minibatch size')
+    group.add_argument('-b', type=int, default=20, help='Minibatch size')
     group.add_argument('--seed', type=int, help='Random seed')
     group.add_argument('-v','--verbose',action='store_true',help='Increases verbosity')
     group.add_argument('--out-pose', type=os.path.abspath, help='Output poses (.pkl) if sampling healpy grid or generating SO3 random poses')

@@ -56,7 +56,7 @@ def parse_args(parser):
     group = parser.add_argument_group('Optional additional arguments')
     group.add_argument('--seed', type=int, help='Random seed for sampling defocus values')
     group.add_argument('-v','--verbose',action='store_true',help='Increases verbosity')
-    group.add_argument('-b', type=int, default=500, help='Minibatch size')
+    group.add_argument('-b', type=int, default=100, help='Minibatch size')
     group.add_argument('--out-png', type=os.path.abspath, help='Path to save montage of first 9 projections')
 
     return parser
