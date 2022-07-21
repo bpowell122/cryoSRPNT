@@ -116,7 +116,7 @@ def main(args):
 
     # configure group names
     if args.group_index is not None:
-        group_names = [f'{args.group_index:03d}_{img:06d}' for img in range(nimgs)]
+        group_names = [f'{args.group_index:03d}_{ptcl:06d}' for ptcl in range(nptcls) for tilt in range(ntilts)]
 
     # populate pandas dataframe with configured data
     df = pd.DataFrame(data=names, columns=IMAGE_HEADERS)
