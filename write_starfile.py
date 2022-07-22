@@ -100,7 +100,7 @@ def main(args):
         if type(poses) == tuple:
             eulers = utils.R_to_relion_scipy(poses[0])
             D = particles[0].get().shape[0]
-            trans = poses[1] * D # convert from fraction to pixels
+            trans = poses[1] * D if poses[1] is not None else None  # convert from fraction to pixels
         else:
             eulers = utils.R_to_relion_scipy(poses)
             trans = None

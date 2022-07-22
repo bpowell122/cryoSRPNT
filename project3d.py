@@ -145,7 +145,9 @@ class Poses(data.Dataset):
     def __len__(self):
         return self.N
     def __getitem__(self, index):
-        return self.rots[index], self.trans[index]
+        rot = self.rots[index]
+        tran = self.trans[index] if self.trans is not None else None
+        return rot, tran
 
 
 def plot_projections(out_png, imgs):
@@ -245,7 +247,7 @@ def main(args):
         trans /= D # convert to boxsize fraction
     else:
         log('No translations specified; will not shift images')
-        trans = np.zeros((rots.shape[0], 2), dtype=np.float32)
+        trans = None #np.zeros((rots.shape[0], 2), dtype=np.float32)
 
     # construct poses dataset
     poses = Poses(rots, trans)
@@ -257,7 +259,8 @@ def main(args):
     for i, (rot, tran) in enumerate(pose_iterator):
         vlog(f'Projecting {(i+1) * args.b}/{poses.N}')
         projection = projector.project(rot)
-        projection = projector.translate(projection, tran)
+        if tran is not None:
+            projection = projector.translate(projection, tran)
         out_imgs[i * args.b: (i+1) * args.b] = projection.cpu().numpy()
 
     t2 = time.time()
@@ -272,8 +275,9 @@ def main(args):
     log(f'Saving {args.out_pose}')
     if type(poses.rots) == torch.Tensor:
         poses.rots = poses.rots.cpu().numpy()
-    if type(poses.trans) == torch.Tensor:
-        poses.trans = poses.trans.cpu().numpy()
+    if poses.trans is not None:
+        if type(poses.trans) == torch.Tensor:
+            poses.trans = poses.trans.cpu().numpy()
     utils.save_pkl((poses.rots, poses.trans), args.out_pose)
 
     if args.out_png:
