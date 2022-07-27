@@ -141,13 +141,17 @@ class Poses(data.Dataset):
         self.trans = trans
         self.N = rots.shape[0]
         assert self.rots.shape == (self.N,3,3)
-        assert self.trans.shape == (self.N,2)
+        if self.trans is not None:
+            assert self.trans.shape == (self.N,2), f'{self.rots.shape} rots vs {self.trans.shape} trans'
     def __len__(self):
         return self.N
     def __getitem__(self, index):
         rot = self.rots[index]
-        tran = self.trans[index] if self.trans is not None else None
-        return rot, tran
+        if self.trans is not None:
+            tran = self.trans[index]
+            return rot, tran
+        else:
+            return rot
 
 
 def plot_projections(out_png, imgs):
@@ -207,7 +211,7 @@ def main(args):
 
     # generate rotation matrices
     if args.healpy_grid is not None:
-        quats = so3_grid.grid_SO3(args.healpy_grid)
+        quats = so3_grid.grid_SO3(args.healpy_grid).astype(np.float32)
         rots = lie_tools.quaternions_to_SO3(torch.from_numpy(quats)).to(device)
         log(f'Generating {rots.shape[0]} rotations at resolution level {args.healpy_grid}')
     elif args.so3_random is not None:
@@ -256,7 +260,12 @@ def main(args):
     log('Processing...')
     pose_iterator = data.DataLoader(poses, batch_size=args.b, shuffle=False)
     out_imgs = np.zeros((len(rots), D, D), dtype=np.float32)
-    for i, (rot, tran) in enumerate(pose_iterator):
+    for i, pose in enumerate(pose_iterator):
+        if len(pose) == 2:
+            rot, tran = pose
+        else:
+            rot = pose
+            tran = None
         vlog(f'Projecting {(i+1) * args.b}/{poses.N}')
         projection = projector.project(rot)
         if tran is not None:
@@ -278,7 +287,9 @@ def main(args):
     if poses.trans is not None:
         if type(poses.trans) == torch.Tensor:
             poses.trans = poses.trans.cpu().numpy()
-    utils.save_pkl((poses.rots, poses.trans), args.out_pose)
+        utils.save_pkl((poses.rots, poses.trans), args.out_pose)
+    else:
+        utils.save_pkl((poses.rots), args.out_pose)
 
     if args.out_png:
         log(f'Saving {args.out_png}')

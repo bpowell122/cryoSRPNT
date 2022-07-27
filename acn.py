@@ -284,8 +284,10 @@ def main(args):
         # FFT particle stack, apply dose weights, IFFT stack
         if args.tilt_series:
             batch_ptcls = torch.fft.fftshift(torch.fft.fft2(torch.fft.ifftshift(batch_ptcls, dim=(-1, -2))), dim=(-1, -2))
+            batch_ptcls = batch_ptcls.real - batch_ptcls.imag  # centered hartley transform
             batch_ptcls = batch_ptcls.view(-1, ntilts, D, D) * dose_weights.view(1, ntilts, D, D)
             batch_ptcls = torch.fft.fftshift(torch.fft.ifft2(torch.fft.ifftshift(batch_ptcls, dim=(-1, -2))),dim=(-1, -2))
+            batch_ptcls = batch_ptcls.real - batch_ptcls.imag  # centered inverse hartley transform
 
         # apply structural noise std1
         if std1 > 0:
@@ -299,9 +301,11 @@ def main(args):
 
         # FFT stack, apply CTF, IFFT stack
         batch_ptcls = torch.fft.fftshift(torch.fft.fft2(torch.fft.ifftshift(batch_ptcls, dim=(-1, -2))), dim=(-1, -2))
+        batch_ptcls = batch_ptcls.real - batch_ptcls.imag  # centered hartley transform
         ctf_weights = compute_ctf(freqs, *torch.split(batch_ctf_params[:, 2:], 1, dim=1), bfactor=args.b_factor).view(-1, D, D)
         batch_ptcls *= ctf_weights
         batch_ptcls = torch.fft.fftshift(torch.fft.ifft2(torch.fft.ifftshift(batch_ptcls, dim=(-1, -2))), dim=(-1, -2))
+        batch_ptcls = batch_ptcls.real - batch_ptcls.imag  # centered inverse hartley transform
 
         # apply shot noise std2
         if std2 > 0:
@@ -315,7 +319,7 @@ def main(args):
         if args.tilt_series:
             batch_ptcls = batch_ptcls.view(-1, ntilts, D, D)
 
-        particle_dataset.particles[batch_idx.cpu().numpy()] = batch_ptcls.real.cpu().numpy()
+        particle_dataset.particles[batch_idx.cpu().numpy()] = batch_ptcls.cpu().numpy()
 
 
     ### post-dataloader final steps

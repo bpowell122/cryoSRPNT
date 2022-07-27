@@ -77,7 +77,9 @@ def main(args):
         ntilts = len(tilt_series)
         nptcls = len(particles) // ntilts
         assert nimgs % len(tilt_series) == 0, 'The provided tilt scheme does not correlate with the number of input images'
-    else: nptcls = len(particles)
+    else:
+        nptcls = len(particles)
+        ntilts = 1
     if args.dose:
         assert args.tilt_series is not None, 'Must supply a tilt series scheme to use dose'
         dose = args.dose
@@ -123,21 +125,19 @@ def main(args):
     df[CTF_HEADERS[0]] = np.full(len(particles), args.Apix)
     if args.ctf:
         for i in range(7):
-            df[CTF_HEADERS[i+1]] = ctf[:,i]
+            df[CTF_HEADERS[i+1]] = ctf[:,i].astype(np.float32)
     if args.poses:
         for i in range(3):
-            df[POSE_HEADERS[i]] = eulers[:,i]
+            df[POSE_HEADERS[i]] = eulers[:,i].astype(np.float32)
         if trans is not None:
             for i in range(2):
-                df[POSE_HEADERS[i+3]] = trans[:,i]
+                df[POSE_HEADERS[i+3]] = trans[:,i].astype(np.float32)
     if args.tilt_series:
         if args.dose:
-            df[MISC_HEADERS[0]] = bfactors
-        df[MISC_HEADERS[1]] = scalefactors
+            df[MISC_HEADERS[0]] = bfactors.astype(np.float32)
+        df[MISC_HEADERS[1]] = scalefactors.astype(np.float32)
     if args.group_index is not None:
         df[MISC_HEADERS[2]] = group_names
-
-    # print([f'{h} : {data[h].shape}' for h in headers if type(data[h]) != list])
 
     headers = [f'{header} #{i+1}' for i, header in enumerate(df.columns.values.tolist())]
     df.columns = headers
