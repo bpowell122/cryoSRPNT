@@ -215,10 +215,6 @@ def main(args):
         ctf_params = np.tile(ctf_params, (Nimg, 1))
 
         assert len(args.dfv) == len(args.dfv), 'dfu and dfv must have the same number of values'
-        # pre-load realistic (non-zero) defocus values
-        ctf_params[:, 2] = args.dfu[0]
-        ctf_params[:, 3] = args.dfv[0]
-
         # apply defocus values from supplied list
         n_dfoci = len(args.dfu)
         defocus_subset = Nimg // n_dfoci
@@ -228,15 +224,14 @@ def main(args):
 
     if args.df_std is not None:
         log(f'Jiggling defocus values by stdev {args.df_std}')
-        df_mean = np.mean(ctf_params[0,2:4])
-        df_std = np.random.normal(df_mean, args.df_std, Nimg)
+        df_std = np.random.normal(0, args.df_std, Nimg)
         if args.no_astigmatism:
             assert args.dfv == args.dfu, "--dfu and --dfv must be the same"
             ctf_params[:,2] += df_std
             ctf_params[:,3] += df_std
         else:
             ctf_params[:,2] += df_std
-            ctf_params[:,3] += np.random.normal(df_mean, args.df_std, Nimg)
+            ctf_params[:,3] += np.random.normal(0, args.df_std, Nimg)
 
 
 
