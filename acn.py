@@ -129,7 +129,7 @@ def plot_projections(out_png, imgs):
 
 
 def main(args):
-    vlog(args)
+    log(args)
 
     # set seed
     if args.seed is not None:

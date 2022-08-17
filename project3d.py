@@ -69,7 +69,7 @@ class Projector:
 
         # FT is not symmetric around origin
         D = nz
-        c = 2/(D-1)*(D/2) -1 
+        c = 2/(D-1)*(D/2) -1
         self.center = torch.tensor([c,c,c]) # pixel coordinate for vol[D/2,D/2,D/2]
 
         if stage_tilt is not None:
@@ -175,7 +175,7 @@ def warnexists(out):
 
 
 def main(args):
-    vlog(args)
+    log(args)
     for out in (args.outstack, args.out_png, args.out_pose):
         if not out: continue
         mkbasedir(out)
@@ -198,7 +198,7 @@ def main(args):
     log(f'Loaded {vol.shape} volume')
 
     if args.stage_tilt:
-        theta = args.stage_tilt*np.pi/180
+        theta = np.array(args.stage_tilt*np.pi/180, dtype=np.float32)
         args.stage_tilt = np.array([[1., 0.,             0.           ],
                                     [0., np.cos(theta), -np.sin(theta)],
                                     [0., np.sin(theta),  np.cos(theta)]]).astype(np.float32)
@@ -215,7 +215,7 @@ def main(args):
         rots = lie_tools.quaternions_to_SO3(torch.from_numpy(quats)).to(device)
         log(f'Generating {rots.shape[0]} rotations at resolution level {args.healpy_grid}')
     elif args.so3_random is not None:
-        rots = lie_tools.random_SO3(args.so3_random).to(device)
+        rots = lie_tools.random_SO3(args.so3_random, dtype=torch.float32).to(device)
         log(f'Generating {rots.shape[0]} random rotations')
     elif args.in_pose is not None:
         poses = utils.load_pkl(args.in_pose)
@@ -247,11 +247,11 @@ def main(args):
         assert args.t_extent > 0, '--t-extent must have a non-negative value'
         assert args.t_extent < projector.nx, '--t-extent cannot be larger than the projection boxsize'
         log(f'Generating translations between +/- {args.t_extent} pixels')
-        trans = (np.random.rand(rots.shape[0], 2,) * 2 * args.t_extent - args.t_extent).astype(np.float32)
+        trans = (np.random.rand(rots.shape[0], 2) * 2 * args.t_extent - args.t_extent).astype(np.float32)
         trans /= D # convert to boxsize fraction
     else:
         log('No translations specified; will not shift images')
-        trans = None #np.zeros((rots.shape[0], 2), dtype=np.float32)
+        trans = None
 
     # construct poses dataset
     poses = Poses(rots, trans)
