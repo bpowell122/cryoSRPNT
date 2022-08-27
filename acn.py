@@ -214,13 +214,17 @@ def main(args):
         ctf_params[0,8] = args.ps
         ctf_params = np.tile(ctf_params, (Nimg, 1))
 
-        assert len(args.dfv) == len(args.dfv), 'dfu and dfv must have the same number of values'
-        # apply defocus values from supplied list
-        n_dfoci = len(args.dfu)
-        defocus_subset = Nimg // n_dfoci
-        for i, (dfu, dfv) in enumerate(zip(args.dfu, args.dfv)):
-            ctf_params[i * defocus_subset: (i + 1) * defocus_subset, 2] = dfu
-            ctf_params[i * defocus_subset: (i + 1) * defocus_subset, 3] = dfv
+        if type(args.dfu) == int:
+            ctf_params[:, 2] = int(args.dfu)
+            ctf_params[:, 3] = int(args.dfv)
+        else:
+            # apply defocus values from supplied list
+            assert len(args.dfu) == len(args.dfv), 'dfu and dfv must have the same number of values'
+            n_dfoci = len(args.dfu)
+            defocus_subset = Nimg // n_dfoci
+            for i, (u, v) in enumerate(zip(args.dfu, args.dfv)):
+                ctf_params[i * defocus_subset: (i + 1) * defocus_subset, 2] = u
+                ctf_params[i * defocus_subset: (i + 1) * defocus_subset, 3] = v
 
     if args.df_std is not None:
         log(f'Jiggling defocus values by stdev {args.df_std}')
