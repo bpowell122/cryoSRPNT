@@ -17,11 +17,10 @@ Both scripts require various components of [cryoDRGN](https://github.com/zhonge/
 
 ### Usage
 See "Background and options" section below for more details regarding common options for each command. All options are visible via `python $script.py --help`. Notably, these scripts can additionally take a .txt file as input specifying a tilt series stage tilt scheme (simulating corresponding rotations+projections and tilt-dependent sample thickness weighting, respectively). 
-`python project3d.py volume.mrc noiseless_projections.mrcs [--in-pose poses.pkl | --healpy-grid RESOLUTION | --so3-random NIMGS] --outpose sampled_poses.pkl`
 
-`python acn.py noiseless_projections.mrcs realistic_projections.mrcs [--ctf ctf.pkl | --dfu DEFOCUS_U --dfv DEFOCUSV ...] --snr1 1.4 --snr2 0.05`
-
-`python write_starfile.py realistic_projections.mrcs --Apix APIX [--ctf ctf.pkl --poses sampled_poses.pkl] -o realistic_projections.star`
+1. `python project3d.py volume.mrc noiseless_projections.mrcs [--in-pose poses.pkl | --healpy-grid RESOLUTION | --so3-random NIMGS] --outpose sampled_poses.pkl`
+2. `python acn.py noiseless_projections.mrcs realistic_projections.mrcs [--ctf ctf.pkl | --dfu DEFOCUS_U --dfv DEFOCUSV ...] --snr1 1.4 --snr2 0.05`
+3. `python write_starfile.py realistic_projections.mrcs --Apix APIX [--ctf ctf.pkl --poses sampled_poses.pkl] -o realistic_projections.star`
 
 
 # Details
